@@ -1,0 +1,57 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker
+          __path__: /var/lib/docker/containers/*/*.log
+
+    pipeline_stages:
+      - docker: {}
+
+  - job_name: syslog
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: syslog
+          __path__: /var/log/syslog
+
+  - job_name: nginx-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx
+          __path__: /mnt/logs/nginx/*.access.log
+      - targets:
+          - localhost
+        labels:
+          job: nginx
+          __path__: /mnt/logs/nginx/*.error.log # skipping access.log and error.log because theyre redirected to stdout (collected by the docker job I think)
+    relabel_configs:
+      - source_labels: ['__path__']
+        target_label: filename
+        regex: '.*/([^/]+)$'
+        replacement: '$1'
+
+      - source_labels: ['filename']
+        regex: '.*\.access\.log'
+        target_label: log_type
+        replacement: access
+
+      - source_labels: ['filename']
+        regex: '.*\.error\.log'
+        target_label: log_type
+        replacement: error

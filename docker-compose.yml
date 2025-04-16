@@ -7,7 +7,9 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./volumes/grafana_data:/var/lib/grafana
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
       - loki
@@ -24,9 +26,11 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/prometheus:/etc/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
+    extra_hosts:
+      - "docker_host:${HOST_IP}"
     networks:
       - monitoring-net
 
@@ -44,7 +48,7 @@ services:
       - '--path.sysfs=/host/sys'
       - '--path.rootfs=/rootfs'
       - --no-collector.mdadm
-      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($|/)'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
@@ -73,46 +77,54 @@ services:
     volumes:
       - /var/log:/var/log:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /etc/promtail:/etc/promtail
-    command: -config.file=/etc/promtail/promtail-config.yaml
+      - ./config/promtail:/etc/promtail
+      - nginx-logs:/mnt/logs/nginx:ro
+    command: -config.file=/etc/promtail/promtail-config.yml
     depends_on:
       - loki
     networks:
       - monitoring-net
 
-  # postgres_exporter_school_db:
-  #   image: prometheuscommunity/postgres-exporter:latest
-  #   container_name: postgres_exporter_school_db
-  #   environment:
-  #     DATA_SOURCE_NAME: "postgresql://${DB1_USER}:${DB1_PASS}@${DB1_HOST}:5432/${DB1_NAME}?sslmode=disable"
-  #   ports:
-  #     - "9188:9187"
-  #   env_file:
-  #     - .env
-  #   networks:
-  #     - monitoring-net
+  postgres_exporter_school_db:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: postgres_exporter_school_db
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DB1_USER}:${DB1_PASS}@${DB1_HOST}:5432/${DB1_NAME}?sslmode=disable"
+    ports:
+      - "9188:9187"
+    env_file:
+      - .env
+    networks:
+      - monitoring-net
 
-  # postgres_exporter_skeduler_db:
-  #   image: prometheuscommunity/postgres-exporter:latest
-  #   container_name: postgres_exporter_skeduler_db
-  #   environment:
-  #     DATA_SOURCE_NAME: "postgresql://${DB2_USER}:${DB2_PASS}@${DB2_HOST}:5432/${DB2_NAME}?sslmode=disable"
-  #   ports:
-  #     - "9189:9187"
-  #   env_file:
-  #     - .env
-  #   networks:
-  #     - monitoring-net
+  postgres_exporter_skeduler_db:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: postgres_exporter_skeduler_db
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DB2_USER}:${DB2_PASS}@${DB2_HOST}:5432/${DB2_NAME}?sslmode=disable"
+    ports:
+      - "9189:9187"
+    env_file:
+      - .env
+    networks:
+      - monitoring-net
 
-  # nginx_exporter:
-  #   image: nginx/nginx-prometheus-exporter:latest
-  #   container_name: nginx_exporter
-  #   command:
-  #     - '-nginx.scrape-uri=http://localhost:8080/nginx_status'
-  #   networks:
-  #     - monitoring-net
+  nginx_exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    container_name: nginx_exporter
+    environment:
+      - NGINX_HOST=${HOST_IP}
+    command:
+      - '-nginx.scrape-uri=http://${HOST_IP}:9110/nginx_status'
+    networks:
+      - monitoring-net
 
 networks:
   monitoring-net:
     name: monitoring-net
     driver: bridge
+
+volumes:
+  grafana-data:
+  nginx-logs:
+    external: true
